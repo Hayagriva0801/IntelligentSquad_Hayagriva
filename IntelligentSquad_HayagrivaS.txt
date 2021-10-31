@@ -1,0 +1,67 @@
+import numpy as np
+import cv2
+import imutils
+import pytesseract
+import twilio
+from twilio.rest import Client  # import twilio
+cf = 0
+b = []
+while True:   
+    c = cv2.VideoCapture()
+    c.open(0,cv2.CAP_DSHOW) # Importing a live video
+    r, f = c.read()
+    img = cv2.imread(r"C:\Users\Srinivasan\PycharmProjects\pythonProject\data\frame "+str(cf)+" .jpg")  # import image using file location
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Users\Srinivasan\PycharmProjects\pythonProject\data\frame "+str(cf)+" .jpg"
+    img = cv2.resize(img, (620, 480))  # Resize the image
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # Grayscale the image
+    gray = cv2.bilateralFilter(gray, 13, 15, 15)  # Blur everything except number plate
+    edged = cv2.Canny(gray, 30, 200)  # Use Canny edge detection method
+    contours = cv2.findContours(edged.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) # Finds Countours
+    contours = imutils.grab_contours(contours)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10] #Sort only first Countours in descending order
+    screenCnt = None
+
+    for c in contours :  # approximate the contour
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.018 * peri,True) # Algorithm to detect the rectangle
+
+        # if our approximated contour has four points, then we can assume that we have found number plate
+        if len(approx) == 4:
+            screenCnt = approx
+            break
+        else:
+            screenCnt=None
+
+    if screenCnt is None:
+        detected = 0  # No rectangular number plate is detected
+        cf += 1
+        continue
+    else:
+        detected = 1  # Rectangular number plate is detected
+        cv2.drawContours(img, [screenCnt], -1, (0, 0, 255), 3)
+    mask = np.zeros(gray.shape, np.uint8)
+    new_image = cv2.drawContours(mask, [screenCnt], 0, 255, -1, )
+    new_image = cv2.bitwise_and(img, img, mask=mask)  # Masking the part except number plate
+    (x, y) = np.where(mask == 255)
+    (topx, topy) = (np.min(x), np.min(y))
+    (bottomx, bottomy) = (np.max(x), np.max(y))
+    Cropped = gray[topx:bottomx + 1, topy:bottomy + 1]  # Cropping and saving it as a new image
+    number_plate = pytesseract.image_to_string(Cropped,config='--psm 11') # Converting Image to string
+    print("Detected license plate Number is:", number_plate)
+    body1 = number_plate
+    if body1 not in b:
+        account_sid = 'AC313b7cb1b7013057edf59c73f663c618'  # Enter acc. SID of twilio
+        auth_token = 'bb428298956e6db244a2387550690080' # Enter auth_token
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            from_='+14322330534',
+            body="The vehicle with registration number", body1, "is parked in no parking" ,
+            to='+919489145367'
+            )  # Enter your twilio phone number in from and respective department police number in to.
+
+        print(message.sid)
+        b.append(body1)
+
+cv2.waitKey(0)
+c.release()
+cv2.destroyAllWindows()
